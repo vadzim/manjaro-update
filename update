@@ -1,0 +1,115 @@
+#!/bin/bash
+
+# usage: update [start delay in seconds] [loop delay in seconds]
+
+finish() {
+	echo FINISHED
+	date
+}
+
+trap finish EXIT
+
+now() {
+	date +%s
+}
+
+wait() {
+	time=$(($(now) + $1))
+	while true
+	do
+		if (($time < $(now)))
+		then
+			return
+		fi
+		sleep 30
+	done
+}
+
+waitOnlineInterval() {
+	for i in $(seq 1000000)
+	do
+		time=$(($(now) + $1 + 15))
+		sleep $1
+		if (($(now) < $time))
+		then
+			return
+		fi
+	done	
+}
+
+stringifyTime() {
+	units=s
+	value=$1
+
+	minutes=$(($value / 60))
+	if [ "$(($minutes * 60))" = "$value" ]; then
+		value=$minutes
+		units=m
+		hours=$(($minutes / 60))
+		if [ "$(($hours * 60))" = "$value" ]; then
+			value=$hours
+			units=h
+		fi
+	fi
+
+	echo $value$units
+}
+
+updateWith() {
+	$2 $1 -Syu --noconfirm
+
+	for i in $(seq 3)
+	do
+		list=$($1 -Qu)
+		[ -z "$list" ] && break
+		echo attempt $i to update packages with $1:
+		echo $list
+		$2 $1 -Syu --noconfirm
+	done
+
+	for i in $(seq 3)
+	do
+		list=$($1 -Qu | cut -d " "  -f 1)
+		[ -z "$list" ] && break
+		echo UPGRADING: $list
+		for p in $list
+		do
+			echo attempt $i to update package \'$p\' with $1:
+			$2 $1 -S --noconfirm $p
+		done
+	done
+
+	yes | $2 $1 -Syu
+}
+
+updatePackages() {
+	yay -Syy
+	updateWith pacman sudo
+	updateWith yay
+}
+
+updateCycle() {
+	while true
+	do
+		if [ -n "$1" ]
+		then
+			date
+			echo sleep $(stringifyTime $1)
+			waitOnlineInterval $1
+		fi
+
+		date
+		updatePackages
+
+		if [ -n "$2" ]
+		then
+			date
+			echo sleep $(stringifyTime $2)
+			wait $2
+		else
+			return
+		fi
+	done
+}
+
+updateCycle $1 $2
